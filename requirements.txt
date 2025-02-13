@@ -1,0 +1,14 @@
+altair==4.2.2
+imbalanced-learn==0.12.3
+matplotlib==3.7.1
+numpy==1.26.4
+openai==1.47.0
+pandas==1.5.3
+plotly==6.0.0
+pyarrow==16.1.0
+pycaret==3.3.2
+pydantic==2.10.5
+pydantic-core==2.27.2
+python-dotenv==1.0.1
+scikit-learn==1.5.0
+streamlit==1.37.1
