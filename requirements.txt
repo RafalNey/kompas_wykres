@@ -4,7 +4,8 @@ imbalanced-learn==0.12.3
 matplotlib==3.7.1
 numpy==1.26.4
 openai==1.47.0
-pandas==1.5.3
+pandas>=2.0
+# pandas==1.5.3
 plotly>=5.5.0,<6.0.0
 plotly-resampler==0.10.0
 pyarrow==16.1.0
