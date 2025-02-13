@@ -1,462 +1,308 @@
 # sekcja importowa
-
 import os
 import boto3
-import gspread
 import numpy as np
 import pandas as pd
 import streamlit as st
-import matplotlib as mpl
 import matplotlib.pyplot as plt
-import matplotlib.font_manager as fm
-
-from textwrap import wrap
-from openai import OpenAI
+from io import BytesIO
 from dotenv import load_dotenv
-from matplotlib.lines import Line2D
-from matplotlib.cm import ScalarMappable
-from mpl_toolkits.axes_grid1.inset_locator import inset_axes
-from oauth2client.service_account import ServiceAccountCredentials
 
-# Wczytanie sekretow z .env
-load_dotenv()
+# Globalne ustawianie szerokosci
+st.set_page_config(layout="wide") 
 
+# ---------------- DEFINICJA ZMIENNYCH GLOBALNYCH: ---------------
+
+patterns = {
+    'Osiągnięcia': ['17.', '32.', '48.'],
+    'Hedonizm': ['3.', '36.', '46.'],
+    'Stymulacja': ['10.', '28.', '43.'],
+    'Kierowanie sobą w działaniu': ['16.', '30.', '56.'],
+    'Kierowanie sobą w myśleniu': ['1.', '23.', '39.'],
+    'Tolerancja': ['14.', '34.', '57.'],
+    'Uniwersalizm ekologiczny': ['8.', '21.', '45.'],
+    'Uniwersalizm społeczny': ['5.', '37.', '52.'],
+    'Życzliwość-troskliwość': ['11.', '25.', '47.'],
+    'Życzliwość-niezawodność': ['19.', '27.', '55.'],
+    'Pokora': ['7.', '38.', '54.'],
+    'Przystosowanie do ludzi': ['4.', '22.', '51.'],
+    'Przystosowanie do reguł': ['15.', '31.', '42.'],
+    'Tradycja': ['18.', '33.', '40.'],
+    'Bezpieczeństwo społeczne': ['2.', '35.', '50.'],
+    'Bezpieczeństwo osobiste': ['13.', '26.', '53.'],
+    'Prestiż': ['9.', '24.', '49.'],
+    'Władza nad zasobami': ['12.', '20.', '44.'],
+    'Władza nad ludźmi': ['6.', '29.', '41.'],
+}
+
+# ----------------------------- FUNKCJE: -----------------------------------
+
+
+def wczytaj_dataframe(nazwa_pliku):
+    try:
+        obj_data = s3.get_object(Bucket=BUCKET_NAME, Key=nazwa_pliku)
+        data = obj_data['Body'].read()
+        df = pd.read_csv(BytesIO(data), sep=';', encoding='utf-8')
+
+        return df
+    except Exception as e:
+        st.write(f"❌ Błąd wczytywania pliku {nazwa_pliku}: {str(e)}")
+        return None
+
+
+def oblicz_srednie_kategorii(df):
+
+    df_kopia = df.copy()
+    for nazwa_kategorii, lista_numerow in patterns.items():
+        kolumny_pasujace = [kolumna for kolumna in df_kopia.columns if any(kolumna.startswith(numer) for numer in lista_numerow)]
+        if len(kolumny_pasujace) == 3:
+            df_kopia[nazwa_kategorii] = df_kopia[kolumny_pasujace].mean(axis=1)
+
+    return df_kopia
+
+
+# ----------------------------- APLIKACJA: -----------------------------------
 
 # Ustawienie początkowych wartości w session_state
-if 'text' not in st.session_state:
-    st.session_state.text = ""
-if 'time' not in st.session_state:
-    st.session_state.time = 0
-if 'gender' not in st.session_state:
-    st.session_state.gender = "Mężczyzna"
-if 'age' not in st.session_state:
-    st.session_state.age = 35
-if 'weight' not in st.session_state:
-    st.session_state.weight = 70
-if 'height' not in st.session_state:
-    st.session_state.height = 170
-if 'sport_activity' not in st.session_state:
-    st.session_state.sport_activity = 1
+if 'df_przetworzone' not in st.session_state:
+    st.session_state.df_przetworzone = None
 
-# Oznaczenie, ze dane nie zostały jeszcze wyciągnięte z AI
-if 'data_extracted' not in st.session_state:
-    st.session_state.data_extracted = False
+if 'dane_pobrane' not in st.session_state:
+    st.session_state.dane_pobrane = False
+    st.session_state.df = None
+    st.session_state.srednie_df = None
 
-# Wartości poczatkowe dla problemow z odswiezaniem
-if 'needs_calculation' not in st.session_state:
-    st.session_state.needs_calculation = False
-if 'current_activity_display' not in st.session_state:
-    st.session_state.current_activity_display = 1
-if 'needs_rerun' not in st.session_state:
-    st.session_state.needs_rerun = False
-
-
-# FUNKCJE ----------------------------------------------
-
-
-# Funkcja do walidacji wartości
-def validate_input(value, min_value, max_value):
-    if value < min_value:
-        return min_value
-    elif value > max_value:
-        return max_value
-    return value
-
-
-# Obliczanie BMI
-def calculate_bmi(weight, height):
-    height_m = height / 100
-    bmi = weight / (height_m ** 2)
-    return bmi
-
-
-# Zamiana sekund na godziny i minuty
-def format_time(seconds):
-    total_minutes = seconds // 60
-    hours = total_minutes // 60
-    minutes = total_minutes % 60
-
-    return hours, minutes
-
-
-# Funkcja suwakowa
-def slider_callback():
-    st.session_state.needs_calculation = True
-
-
-# Zapytanie do openAI, podpięte pod Langfuse
-@st.cache_resource
-@observe()
-def get_data_from_text(text):
-
-    # Inicjalizacja zmiennych
-    gender = None
-    age = None
-    weight = None
-    height = None
-    sport_activity = None
-
-    prompt = """
-    Twoim zadaniem jest wyciągnięcie odpowiednich informacji z tekstu podanego przez użytkownika. Postaraj się wyciągną lub wyinterpretować z tekstu następujące dane:
-
-    <gender> jakiej płci jest użytkownik. Odpowiednio przydziel K dla kobiety lub M dla mężczyzny.Jeśli nie znajdziesz żadnych informacji na ten temat lub wskazówek w tekście użytkownika, przyjmij że masz do czynienia z mężczyzną.
-
-    <age> określ wiek użytkownika w latach. Minimalny wiek to 10 lat, maksymalny to 100. Jeśli użytkownik poda wiek niższy niż 10, to przypisz mu 10, a jeśli większy niż 100, to przypisz mu 100. Jeśli w żaden sposób nie będziesz w stanie wyciągnąć wieku z danych, przyjmij 35.
-
-    <weight> ile waży użytkownik w kilogramach. Minimalna waga to 45, maksymalna to 350. Jeśli użytkownik poda wagę niższą niż 45, to przypisz mu 45, a jeśli większą niż 350, to przypisz mu 350.Jeśli nie będziesz tego w stanie w żaden sposób określić, przyjmij, że dla kobiety to będzie 65, a dla mężczyzny 80.
-
-    <height> jaki jest wzrost użytkownika w centymetrach. Minimalny wzrost to 120, maksymalny to 250. Jeśli użytkownik poda wzrost niższy niż 120, to przypisz mu 120, a jeśli większy niż 250, to przypisz mu 250.Jeśli nie będziesz w stanie określić jego wzrostu, przyjmij, że dla kobiety to będzie 165, a dla mężczyzny 175.
-
-    <sport_activity> - na podstawie tekstu wpisanego przez użytkownika określ jego aktywność sportową  w skali od 1 do 11, gdzie:
-
-    1 oznacza praktycznie wyłącznie siedzący lub półleżacy tryb życia na kanapie.
-    2 to najwyżej umiarkowany ruch po mieszkaniu,
-    3 to okazyjne spacery na odcinku 1-2 kilometrów,
-    4 oznacza w miarę regularne, kilka razy w tygodniu, półgodzinne spacery,
-    5 to już codzienny spacer, często z psem, czasem kilkuminutowy sprint za autobusem,
-    6 to osoba dla której przebiegnięcie lekkim truchtem jednego lub dwóch kilometrów nie stanowi większego problemu,
-    7 to osoba sporadycznie uprawiająca sport, czasem biorąca udział w zajęciach typu aerobik lub raz w tygodniu szalejąca na parkiecie w dyskotece.
-    8 to osoba regularnie uprawiająca sport, kilka razy w tygodniu uczęszczająca na siłownię.
-    9 to osoba, która regularnie biega, ale tylko na odcinku kilku kilometrów, półmaraton to już będzie dla niej wyzwanie.
-    10 to osoba, dla której przebiegnięcie półmaratonu nie jest żadnym problemem i będzie się starała zając miejsce w pierwszej setce,
-    11 oznacza zawodowego maratończyka, dla którego taki półmaraton to bułka z masłem.
-
-    Jeśli na podstawie tekstu użytkownika nie będziesz w stanie określić jego aktywności sportowej,przyjmij 6.
-
-    Zwróć wartości jako obiekt json z następującymi kluczami:
-    - gender - string 'K' lub 'M'
-    - age - integer
-    - weight - integer
-    - height - integer
-    - sport_activity - integer
-
-    Upewnij się, że wszystkie klucze mają przypisane im odpowiednie wartości.
-
-    Oto przykład tekstu, z którego należy wyciągnąć informacje:
-    ```
-    Mam na imie Rafał, mam 50 lat, 90 kg, 170, chodzę czasem na siłownię.
-    ```
-
-    W tym przypadku odpowiedź powinna wyglądać tak:
-    {
-    "gender": "M",
-    "age": 50,
-    "weight": 90,
-    "height": 170,
-    "sport_activity": 7
-    }
-
-    Oto kolejny przykład tekstu, z którego należy wyciągnąć informacje:
-    ```
-    Ada, mam już 3 dychy na karku, trochę gruba, ale bez przesady bo tylko 82, a zresztą dużo palę, a od tego się chudnie podobno, ruszam się jak sprzątam albo idę na zakupy.
-    ```
-
-    W tym przypadku odpowiedź powinna wyglądać tak:
-    {
-    "gender": "K",
-    "age": 30,
-    "weight": 82,
-    "height": 165,
-    "sport_activity": 2
-    }
-
-    """
-
-    messages = [
-        {
-            "role": "system",
-            "content": prompt,
-        },
-        {
-            "role": "user",
-            "content": f"```{text}```",
-        },
-    ]
-
-    chat_completion = llm_client.chat.completions.create(
-        response_format={"type": "json_object"},
-        messages=messages,
-        model="gpt-4o-mini",
-    )
-    response = json.loads(chat_completion.choices[0].message.content)
-
-    # Ekstrakcja wartości z response z obsługą błędów
-    try:
-        gender = response['gender']
-        age = response['age']
-        weight = response['weight']
-        height = response['height']
-        sport_activity = response['sport_activity']
-    except KeyError as e:
-        print(f"Brakujący klucz w odpowiedzi: {e}")
-
-    return gender, age, weight, height, sport_activity
-
-
-def calculate_time_to_run_5k(gender, age, weight, height, sport_activity):
-
-    # inicjalizacja
-    time = 0
-
-    # Obliczanie BMI
-    bmi = calculate_bmi(weight, height)
-
-    # Bazowe czasy w SEKUNDACH na 5km
-    if sport_activity == 1:
-        time = 3500  # 59 minut - bardzo wolny spacer
-    elif sport_activity == 2:
-        time = 3100  # 51 minut - wolny spacer
-    elif sport_activity == 3:
-        time = 2800  # 46 minut - spacer
-    elif sport_activity == 4:
-        time = 2500  # 41 minut - marsz
-    elif sport_activity == 5:
-        time = 2200  # 36 minut - szybki marsz
-    elif sport_activity == 6:
-        time = 1900  # 31 minut - trucht
-    elif sport_activity == 7:
-        time = 1700  # 28 minut - wolny bieg
-    elif sport_activity == 8:
-        time = 1500  # 25 minut - przyzwoity, amatorski bieg
-    elif sport_activity == 9:
-        time = 1300  # 22 minut - dobry czas
-    elif sport_activity == 10:
-        time = 1100  # 18 minut - bardzo dobry czas
-    else:  # 11
-        time = 900   # 15 minut - świetny czas
-
-    # Obliczanie BMI i jego wpływ
-    bmi = calculate_bmi(weight, height)
-
-    if bmi >= 35:
-        time *= 2    # +100% czasu dla znacznej otyłości
-    elif bmi >= 30:
-        time *= 1.25    # +25% czasu dla otyłości
-    elif bmi >= 25:
-        time *= 1.10    # +10% czasu dla nadwagi
-    elif bmi < 18.5:
-        time *= 1.05    # +5% czasu dla znacznej niedowagi (braku mięśni)
-
-    # Wpływ płci
-    if gender == "K":
-        time *= 1.05    # +5% czasu dla kobiet
-
-    # Wpływ wieku
-    if age >= 65:
-        time *= 1.05   # +5% czasu dla starszych
-    elif age >= 45:
-        time *= 1.05    # +5% czasu dla średniego wieku
-
-    return round(time)  # zwracamy czas w SEKUNDACH
-
-
-# Wprowadzenie tytułu aplikacji
-st.markdown("<h1 style='text-align: center;'>Aplikacja do wyliczania czasu na półmaraton wrocławski</h1>", unsafe_allow_html=True)
-st.write("")
-st.write("")
+# Tytuł aplikacji
+st.markdown("<h1 style='text-align: center;'>Aplikacja do rysowania wykresów dla Kompasu Przekonań</h1>", unsafe_allow_html=True)
 
 # Tekst powitalny
-st.write("Witaj w aplikacji do wyliczania czasu, w jakim uda ci się pokonać dystans półmaratonu wrocławskiego, jeśli oczywiście zechcesz wziąć w nim udział.")
-st.write("")
+st.write('Witaj w naszej pierwszej wersji aplikacji do rysowania wykresów. Naciśnij poniższy przycisk, aby pobrać dane.')
 
-# Tworzymy pole tekstowe
-user_input = st.text_area("Podaj proszę swój wiek, płeć, wagę i wzrost. A także napisz trochę o swojej aktywności fizycznej. Jakie sporty uprawiasz i z jakim natężeniem.", height=100,   max_chars=250)
+# Przycisk do pobrania danych
+if st.button("Pobierz dane"):
+    if not st.session_state.dane_pobrane:
+        load_dotenv()
+        BUCKET_NAME = 'od-zera-do-ai-rafal'
 
-if user_input and not st.session_state.data_extracted:
-
-    response = get_data_from_text(user_input)
-    if response:
-        gender, age, weight, height, sport_activity = response
-
-        # Zapisz wartości w session_state
-        st.session_state.gender = "Mężczyzna" if gender == "M" else "Kobieta"
-        st.session_state.age = age
-        st.session_state.weight = weight
-        st.session_state.height = height
-        st.session_state.sport_activity = sport_activity
-
-        # Oznacz, że dane zostały juz wyciągnięte
-        st.session_state.data_extracted = True
-
-if user_input:
-
-    # Ustawienia ograniczeń
-    AGE_MIN, AGE_MAX = 10, 100
-    WEIGHT_MIN, WEIGHT_MAX = 45, 350
-    HEIGHT_MIN, HEIGHT_MAX = 120, 250
-
-    # Obliczanie BMI
-    bmi = calculate_bmi(st.session_state.weight, st.session_state.height)
-
-    st.write("")
-    st.write(' Jeśli coś pokręciłem (a jestem tylko biedną, sztuczną inteligencją), to z góry przepraszam. Na szczęście możesz ręcznie wprowadzić odpowiednie poprawki.')
-
-    # Moj wesoły obrazek
-    st.image('ewolucja.png')
-
-    # Ustawianie kolumn
-    col1, col2, col3 = st.columns([0.15, 5, 0.15])
-
-    with col1:
-        st.write("")
-
-    with col2:
-
-        # Callback dla suwaka
-        def update_activity():
-            st.session_state.sport_activity = st.session_state.activity_slider
-
-        current_activity = st.slider(
-            "Stopień aktywności fizycznej:",
-            min_value=1,
-            max_value=11,
-            value=st.session_state.sport_activity,
-            key='activity_slider',
-            on_change=update_activity
+        s3 = boto3.client(
+            "s3",
+            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+            endpoint_url=os.getenv("AWS_ENDPOINT_URL_S3")
         )
 
-        # Lista napisów odpowiadających pozycjom suwaka
-        napisy = [
-            "Władca kanapy",
-            "Mistrz kulinarnego maratonu",
-            "Medal za walkę z grawitacją",
-            "Biegacz do lodówki",
-            "Stylowy spacerniak",
-            "Sprintem, co najwyżej na przystanek",
-            "Szef porannych rozciągów",
-            "Wyginam śmiało ciało... dla mnie to mało!",
-            "Król Biceps Pierwszy",
-            "Szaleństwo cardio",
-            "Szybki jak Sonic"
+        try:
+            s3.head_bucket(Bucket=BUCKET_NAME)
+            st.write('✅ Połączenie z Digital Ocean działa poprawnie.')
+
+            st.write("Pobieranie danych z bucketu...")
+            df = wczytaj_dataframe('kompas_dane.csv')
+
+            if df is not None:
+                df_kopia = df.copy()
+
+                # Przetwarzanie danych
+                for nazwa_kategorii, numery_pytan in patterns.items():
+                    kolumny_pasujace = []
+
+                    for numer in numery_pytan:
+                        # Szukamy dokładnego dopasowania początku nazwy kolumny
+                        for kolumna in df_kopia.columns:
+                            if kolumna.startswith(numer):
+                                kolumny_pasujace.append(kolumna)
+                                break  # Przechodzimy do następnego numeru po znalezieniu dopasowania
+
+                    if len(kolumny_pasujace) == 3:
+                        df_kopia[nazwa_kategorii] = df_kopia[kolumny_pasujace].mean(axis=1)
+                    else:
+                        st.write(f"ERROR! Znalezione kolumny: {kolumny_pasujace}")
+
+                st.session_state.df_przetworzone = df_kopia
+                st.session_state.srednie_df = wczytaj_dataframe('kompas_srednie_dane.csv')
+                st.session_state.dane_pobrane = True
+
+        except Exception as e:
+            st.write(f"❌ Błąd połączenia: {str(e)}")
+
+# Jeśli dane są załadowane, pokazujemy wybór wiersza i przycisk do generowania wykresów
+if st.session_state.dane_pobrane:
+    wiersz = st.number_input("Wybierz numer wiersza", min_value=1, max_value=len(st.session_state.df_przetworzone), value=len(st.session_state.df_przetworzone))
+
+    if st.button("Zatwierdź wiersz"):
+        if st.session_state.df_przetworzone is None:
+            st.error("Dane nie zostały jeszcze przetworzone!")
+        else:
+            # Sprawdzamy, czy wszystkie kategorie istnieją
+            missing_categories = [cat for cat in patterns.keys() if cat not in st.session_state.df_przetworzone.columns]
+            if missing_categories:
+                st.error(f"Brakujące kategorie: {missing_categories}")
+                st.write("\nDostępne kolumny:")
+                st.write(st.session_state.df_przetworzone.columns.tolist())
+            else:
+                names = list(patterns.keys())
+                values = [st.session_state.df_przetworzone[nazwa_kategorii].iloc[wiersz-1] for nazwa_kategorii in names]
+
+        # Rysowanie pierwszego wykresu (kołowego)
+        names = list(patterns.keys())
+        values = [st.session_state.df_przetworzone[nazwa_kategorii].iloc[wiersz-1] for nazwa_kategorii in names]
+
+        # ------------------------ WYKRES w NAGRODE -----------------------------
+
+        # Create figure dla pierwszego wykresu
+        fig_kolowy = plt.figure(figsize=(8, 8))
+        ax = fig_kolowy.add_subplot(111, projection='polar')
+
+        plt.rcParams['font.family'] = 'DejaVu Sans'  # lub 'Liberation Sans'
+
+        # KOLORY
+        colors = ['#d6018d', '#8511fe', '#0143fe', '#2a8cff', '#02d6e6', '#02f873', '#06de2d', '#01bd23', '#009c20', '#0c7210', '#9c9b01', '#dede01', '#efee02', '#fadd4c', '#f4a302', '#e08b09', '#fd4238', '#de0800', '#b9130c']
+
+        # Calculate angles for each slice
+        angles = np.linspace(0, 2*np.pi, len(values), endpoint=False)
+
+        # Width of each bar (with gap)
+        width = (2*np.pi) / len(values) * 0.9
+
+        # Plot bars
+        bars = ax.bar(angles, values, width=width, bottom=0.0, alpha=0.85)
+
+        # Color each bar
+        for bar, color in zip(bars, colors):
+            bar.set_facecolor(color)
+
+        # Add outer color bands
+        outer_height = 0.33  # Height of the outer band (1/3 of the space between 6 and 7)
+        outer_bars = ax.bar(angles, [outer_height] * len(values), width=width, bottom=6.67, alpha=0.85)
+
+        # Color outer bars
+        for outer_bar, color in zip(outer_bars, colors):
+            outer_bar.set_facecolor(color)
+
+        # Add thin circular grid lines (every 0.1)
+        theta = np.linspace(0, 2*np.pi, 200)
+        for r in np.arange(1.1, 6.0, 0.1):
+            if r not in [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]:  # Skip the positions where thick lines will be
+                ax.plot(theta, [r]*len(theta), color='black', alpha=0.3, linewidth=0.5)
+
+        # Add thick circular lines at main positions
+        for r in [0.75, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0]:
+            ax.plot(theta, [r]*len(theta), color='black', linewidth=1.0)
+
+        # Define pairs between which thick lines should be drawn
+        thick_lines_between = [
+            ('Osiągnięcia', 'Hedonizm'),
+            ('Hedonizm', 'Stymulacja'),
+            ('Kierowanie sobą w myśleniu', 'Tolerancja'),
+            ('Życzliwość-niezawodność', 'Pokora'),
+            ('Pokora', 'Przystosowanie do ludzi'),
+            ('Przystosowanie do reguł', 'Tradycja'),
+            ('Tradycja', 'Bezpieczeństwo społeczne'),
+            ('Bezpieczeństwo osobiste', 'Prestiż'),
+            ('Prestiż', 'Władza nad zasobami'),
+            ('Władza nad ludźmi', 'Osiągnięcia')
         ]
 
-        # Wyświetlanie napisu w zależności od pozycji suwaka, z centrowaniem
-        st.markdown(
-            f"<h5 style='text-align: center;'>{napisy[current_activity - 1]}</h5>",
-            unsafe_allow_html=True
-        )
-        st.write("")
+        # Add radial lines between slices
+        for i, angle in enumerate(angles):
+            line_angle = angle + (2*np.pi)/(len(values)*2)
+            current_value = names[i]
+            next_value = names[(i+1) % len(names)]
 
-    with col3:
-        st.write("")
+            # Check if this pair should have a thick line
+            is_thick = (current_value, next_value) in thick_lines_between or (next_value, current_value) in thick_lines_between
 
-    with st.form("input_form"):
-        col1, col2, col3, col4, col5, col6, col7, col8, col9 = st.columns([1, 5, 1, 5, 1, 5, 1, 5, 1])
+            # Draw the line with appropriate thickness
+            linewidth = 1.5 if is_thick else 0.25  # Grubsze linie 1.5, cieńsze 0.25
+            ax.plot([line_angle, line_angle], [0, 7], 'k-', linewidth=linewidth)
 
-        with col1:
-            st.write("")
+        # Customize the chart
+        ax.set_theta_zero_location('E')  # Start at 3 o'clock
+        ax.set_theta_direction(1)  # Counter-clockwise
+        ax.set_rlim(0, 7.0)  # Extend limit to accommodate labels
 
-        with col2:
-            # Płeć
-            gender_index = 0 if st.session_state.gender == "Mężczyzna" else 1
-            st.session_state.gender = st.selectbox(
-                "Płeć:",
-                options=["Mężczyzna", "Kobieta"],
-                index=gender_index)
+        # Remove default grid
+        ax.grid(False)
+        ax.set_rticks([])  # Remove radial ticks
+        ax.set_xticks([])  # Remove angular ticks
 
-        with col3:
-            st.write("")
+        # Add a white circle in the center
+        center_circle = plt.Circle((0, 0), 0.75, transform=ax.transData._b, color='white', zorder=3)
+        ax.add_artist(center_circle)
 
-        with col4:
-            # Wiek
-            age_input = st.number_input(
-                "Wiek (lata):",
-                value=st.session_state.age,
-                min_value=AGE_MIN,
-                max_value=AGE_MAX,
-                step=1
-            )
-            st.session_state.age = validate_input(age_input, AGE_MIN, AGE_MAX)
+        plt.title('Radial Chart of Values', pad=20, size=14)
+        plt.tight_layout()
 
-        with col5:
-            st.write("")
+        # Add curved text labels
+        for idx, (angle, name) in enumerate(zip(angles, names)):
+            # Calculate the middle angle of the bar
+            middle_angle = angle
 
-        with col6:
-            # Waga
-            weight_input = st.number_input(
-                "Waga (kg):",
-                value=st.session_state.weight,
-                min_value=WEIGHT_MIN,
-                max_value=WEIGHT_MAX,
-                step=1
-            )
-            st.session_state.weight = validate_input(weight_input, WEIGHT_MIN, WEIGHT_MAX)
+            # Convert angle to degrees for text rotation
+            angle_deg = np.rad2deg(middle_angle)
 
-        with col7:
-            st.write("")
+            # Adjust text alignment based on position
+            if 0 <= angle_deg <= 180:  # górny prawy kwadrant
+                rotation = angle_deg - 90
+            else:  # dolna połowa
+                rotation = angle_deg + 90
 
-        with col8:
-            # Wzrost
-            height_input = st.number_input(
-                "Wzrost (cm):",
-                value=st.session_state.height,
-                min_value=HEIGHT_MIN,
-                max_value=HEIGHT_MAX,
-                step=1
-            )
-            st.session_state.height = validate_input(height_input, HEIGHT_MIN, HEIGHT_MAX)
+            # Split long names into two lines
+            if len(name) > 12:
+                split_point = name.find('-') if '-' in name else len(name)//2
+                if '-' in name:
+                    name = name.replace('-', '\n')
+                else:
+                    words = name.split()
+                    if len(words) > 1:
+                        mid = len(words) // 2
+                        name = ' '.join(words[:mid]) + '\n' + ' '.join(words[mid:])
+                    else:
+                        name = name[:split_point] + '\n' + name[split_point:]
 
-        with col9:
-            st.write("")
+            # Add the text
+            ax.text(middle_angle, 6.3, name,
+                    ha='center', va='center',
+                    rotation=rotation,
+                    rotation_mode='anchor',
+                    fontsize=8)
+        # plt.show()
+        st.pyplot(fig_kolowy)
 
-        st.write("")
-        st.write("")
+        # ------------------------ WYKRES GRUPOWY -------------------------
+        st.subheader("Wykres grupowy")
 
-        # Przycisk do zatwierdzenia danych
-        submit_button = st.form_submit_button("Zatwierdź zmiany")
+        if st.session_state.srednie_df is not None:
+            kolumny_1_57 = [col for col in st.session_state.srednie_df.columns if col.split(".")[0].isdigit()]
+            dane = st.session_state.srednie_df[kolumny_1_57].values
+            os_x = np.arange(1, len(kolumny_1_57) + 1)
+            ostatni_wiersz = dane[-1]
 
-        if submit_button:
+            # Tworzenie figury i osi
+            fig, ax = plt.subplots(figsize=(20, 5))  # Zwiększone wymiary wykresu
 
-            current_gender = "K" if st.session_state.gender == "Kobieta" else "M"
-            speed = calculate_time_to_run_5k(
-                current_gender,
-                st.session_state.age,
-                st.session_state.weight,
-                st.session_state.height,
-                st.session_state.sport_activity
-            )
+            # Iteruj przez wiersze (oprócz ostatniego)
+            for i in range(dane.shape[0]-1):
+                ax.scatter(os_x, dane[i], color='blue', alpha=0.6, s=30)
 
-            # Ochrona pipe-line'a przed danymi wykraczającymi poza zakres.
-            if speed < 2840:
+            # Rysowanie ostatniego wiersza
+            ax.scatter(os_x, ostatni_wiersz, color='red', s=50, zorder=5)
 
-                # Utworzenie df z danymi
-                df = pd.DataFrame({
-                    'gender': current_gender,
-                    'age': st.session_state.age,
-                    'speed': speed
-                }, index=[0])
-                df.columns = ['Płeć', 'Wiek', '5 km Czas']
+            # Ustawienia osi
+            ax.set_xticks(os_x)
+            ax.set_xticklabels([])  # Usunięcie opisów osi X
+            ax.set_yticks(np.arange(-4, 5))  # Ustawienie kresek na osi Y
+            ax.set_yticklabels([])  # Usunięcie opisów osi Y
+            ax.set_ylim(-4, 4)
+            ax.axhline(0, color='black', linewidth=1)
 
-                # Wykonanie predykcji i odczyt wyniku
-                prediction = predict_model(model, data=df)
-                czas = int(prediction.loc[0, 'prediction_label'])
+            # Tytuł
+            ax.set_title("Porównanie ostatniego wiersza z resztą danych")
 
-            else:
-                czas = int(speed * 4.2)
+            # Dodanie siatki
+            ax.grid(True, linestyle='--', alpha=0.7)
 
-            # seconds = format_time(czas)
-            total_minutes = czas // 60
-            hours = total_minutes // 60
-            minutes = total_minutes % 60
+            # Dopasowanie układu
+            plt.tight_layout()
 
-            # Zastosowanie reguł zaokrąglania
-            if hours >= 5:
-                minutes = 0  # Zwraca godziny i 0 minut
-            elif 2 <= hours < 5:
-                # Zaokrąglamy do kwadransów
-                minutes = (minutes // 15) * 15
-            else:
-                # Zaokrąglamy do 5 minut
-                minutes = (minutes // 5) * 5
-
-            if hours >= 5:
-                napis = 'Przewidywany czas biegu (jeśli można tak to nazwać) wynosi powyżej 5 godzin. Może więc warto zacząć raczej od spacerów? I zastanowić się poważnie nad zmianą trybu życia?'
-            elif hours > 1 and hours < 5 and minutes > 0:
-                napis = f"Przewidywany czas biegu wynosi {hours} godziny i {minutes} minut."
-            elif hours > 1 and hours < 5 and minutes == 0:
-                napis = f"Przewidywany czas biegu wynosi {hours} godziny."
-            elif hours == 1 and minutes > 0:
-                napis = f"Przewidywany czas biegu wynosi {hours} godzinę i {minutes} minut."
-            elif hours == 1 and minutes == 0:
-                napis = f"Przewidywany czas biegu wynosi {hours} godzinę."
-            st.markdown(f"<h6 style='font-size: 24px;'>{napis}</h6>", unsafe_allow_html=True)
+            # Wyświetlenie wykresu w Streamlit
+            st.pyplot(fig)
