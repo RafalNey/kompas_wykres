@@ -510,7 +510,7 @@ if st.button('Zatwierdź odpowiedzi'):
 
         # Scalenie dataframów
         if 'df' in st.session_state:
-            combined_df = pd.concat([st.session_state.df, odpowiedzi_df], axis=1)
+            combined_df = pd.concat([st.session_state.df, odpowiedzi_df], axis=1, ignore_index=False)
 
             # Sprawdzenie czy plik juz istnieje w buckecie
             try:
