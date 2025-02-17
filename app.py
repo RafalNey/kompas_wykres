@@ -532,11 +532,6 @@ if st.button('Zatwierdź odpowiedzi'):
                     st.error(f"Błąd dostępu do S3: {str(e)}")
                     raise
 
-            # Debug prints
-            st.write("Debug: odpowiedzi_df:", odpowiedzi_df.columns.tolist())
-            st.write("Debug: session_state.df:", st.session_state.df.columns.tolist())
-            st.write("Debug: combined_df:", combined_df.columns.tolist())
-
             # Zapisz z powrotem do S3
             csv_buffer = BytesIO()
             updated_df.to_csv(csv_buffer, sep=';', index=False, encoding='utf-8')
