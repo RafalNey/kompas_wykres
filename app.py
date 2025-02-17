@@ -504,23 +504,30 @@ if st.button('Zatwierdź odpowiedzi'):
     try:
         # Przygotowanie nowych danych - przekształcenie słownika na DataFrame
         odpowiedzi_df = pd.DataFrame([wyniki])
+        odpowiedzi_df = odpowiedzi_df.reset_index(drop=True)
 
         # Dodanie ID_kursanta do odpowiedzi
         odpowiedzi_df.insert(0, 'ID_kursanta', ID_kursanta)
 
         # Scalenie dataframów
         if 'df' in st.session_state:
+            st.session_state.df = st.session_state.df.reset_index(drop=True)
             combined_df = pd.concat([st.session_state.df, odpowiedzi_df], axis=1, ignore_index=False)
+            combined_df = combined_df.reset_index(drop=True)
 
             # Sprawdzenie czy plik juz istnieje w buckecie
             try:
                 s3_client.head_object(Bucket=BUCKET_NAME, Key='dane_kursantow.csv')
-                # Plik istnieje, wczytaj go
+                # Jesli plik istnieje, wczytaj go
                 existing_df = wczytaj_dataframe(s3_client, BUCKET_NAME, 'dane_kursantow.csv')
-                # Dodaj nowy wiersz
                 existing_df = existing_df.reset_index(drop=True)
-                combined_df = combined_df.reset_index(drop=True)
-                updated_df = pd.concat([existing_df, combined_df], ignore_index=True)
+
+                st.write("Debug: odpowiedzi_df:", odpowiedzi_df.head())
+                st.write("Debug: session_state.df:", st.session_state.df.head())
+                st.write("Debug: combined_df:", combined_df.head())
+
+                # Dodaj nowy wiersz
+                updated_df = pd.concat([existing_df, combined_df], axis=0, ignore_index=True)
             except ClientError as e:
                 if e.response['Error']['Code'] == '404':
                     # Plik nie istnieje, użyj tylko nowych danych
