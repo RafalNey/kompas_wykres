@@ -511,21 +511,16 @@ if st.button('Zatwierdź odpowiedzi'):
 
         # Scalenie dataframów
         if 'df' in st.session_state:
-            st.session_state.df = st.session_state.df.reset_index(drop=True)
-            combined_df = pd.concat([st.session_state.df, odpowiedzi_df], axis=1, ignore_index=False)
-            combined_df = combined_df.reset_index(drop=True)
-
-            # Sprawdzenie czy plik juz istnieje w buckecie
+            # Używamy tylko jednego DataFrame z danymi metryczkowymi
+            combined_df = st.session_state.df.copy()
+            # Dodajemy kolumny z odpowiedziami
+            for col in odpowiedzi_df.columns:
+                combined_df[col] = odpowiedzi_df[col].values[0]
             try:
                 s3_client.head_object(Bucket=BUCKET_NAME, Key='dane_kursantow.csv')
-                # Jesli plik istnieje, wczytaj go
+                # Plik istnieje, wczytaj go
                 existing_df = wczytaj_dataframe(s3_client, BUCKET_NAME, 'dane_kursantow.csv')
                 existing_df = existing_df.reset_index(drop=True)
-
-                st.write("Debug: odpowiedzi_df:", odpowiedzi_df.head())
-                st.write("Debug: session_state.df:", st.session_state.df.head())
-                st.write("Debug: combined_df:", combined_df.head())
-
                 # Dodaj nowy wiersz
                 updated_df = pd.concat([existing_df, combined_df], axis=0, ignore_index=True)
             except ClientError as e:
@@ -536,10 +531,11 @@ if st.button('Zatwierdź odpowiedzi'):
                     # Inny błąd S3
                     st.error(f"Błąd dostępu do S3: {str(e)}")
                     raise
-            except Exception as e:
-                # Pozostałe nieoczekiwane błędy
-                st.error(f"Nieoczekiwany błąd: {str(e)}")
-                raise
+
+            # Debug prints
+            st.write("Debug: odpowiedzi_df:", odpowiedzi_df.columns.tolist())
+            st.write("Debug: session_state.df:", st.session_state.df.columns.tolist())
+            st.write("Debug: combined_df:", combined_df.columns.tolist())
 
             # Zapisz z powrotem do S3
             csv_buffer = BytesIO()
