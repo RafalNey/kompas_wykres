@@ -518,6 +518,8 @@ if st.button('Zatwierdź odpowiedzi'):
                 # Plik istnieje, wczytaj go
                 existing_df = wczytaj_dataframe(s3_client, BUCKET_NAME, 'dane_kursantow.csv')
                 # Dodaj nowy wiersz
+                existing_df = existing_df.reset_index(drop=True)
+                combined_df = combined_df.reset_index(drop=True)
                 updated_df = pd.concat([existing_df, combined_df], ignore_index=True)
             except ClientError as e:
                 if e.response['Error']['Code'] == '404':
