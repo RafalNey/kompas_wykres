@@ -443,7 +443,7 @@ Czy zastanawialiście się kiedyś, dlaczego jedne zadania wykonujecie chętniej
 
 Jako ludzie różnimy się między sobą. Mamy różne cele, różne pragnienia i dążenia, różne sposoby osiągania naszych celów i różne przekonania. Często są one nieświadome. Ale czy tego chcemy, czy nie, wpływają na nasze życie. Są bowiem powiązane z emocjami, które nami kierują, popychając nas w stronę jednych rzeczy, a odpychając od innych. Stanowią motywację naszego działania.
 
-Jeśli tylko szczerze odpowiesz na poniższe pytania, dowiesz się, co tobą kieruje, co cię tak naprawdę w życiu motywuje. Ankieta jest oczywiście całkowicie anonimowa, żadne wrażliwe dane nie są tutaj ani zbierane, ani przechowywane.
+Jeśli tylko szczerze odpowiesz na poniższe pytania, najprawdopodobniej dowiesz się, co tobą kieruje, co cię tak naprawdę w życiu motywuje. Ankieta jest oczywiście całkowicie anonimowa, żadne wrażliwe dane nie są tutaj ani zbierane, ani przechowywane.
 
 </div>
 """, unsafe_allow_html=True)
@@ -475,30 +475,75 @@ st.write("")
 wyniki = {}
 
 # Wyświetlanie pytań i suwaków
+# Styl CSS dla horyzontalnego układu
+st.markdown("""
+    <style>
+        div.row-widget.stRadio > div {
+            flex-direction: row;
+            align-items: center;
+            justify-content: space-between;
+        }
+        div.row-widget.stRadio > div > label {
+            font-size: 0.8em;
+            padding: 0 0.1em;
+            white-space: nowrap;
+        }
+         /* Ukrycie indeksów przed radiobutonami */
+        div.row-widget.stRadio > div label span:first-child {
+            display: none;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
 for pytanie in QUESTIONS:
     st.write(pytanie)
-    col1, col2, col3 = st.columns([1, 5, 1])
-    with col2:
-        position = st.slider(
-            "Wybierz pozycję",
-            min_value=1,
-            max_value=6,
-            value=1,
-            step=1,
-            key=pytanie,
-            label_visibility="hidden"
-        )
-        st.write(f"{position} - {DESCRIPTIONS[position - 1]}")
+
+    # Wyświetl opisy nad przyciskami
+    cols = st.columns(7)
+    descriptions = [
+        "N/A",
+        "zupełnie niepodobny do mnie",
+        "niepodobny do mnie",
+        "trochę podobny do mnie",
+        "średnio podobny do mnie",
+        "podobny do mnie",
+        "bardzo podobny do mnie"
+    ]
+
+    for i, desc in enumerate(descriptions):
+        with cols[i]:
+            st.write(desc)
+
+    # Radio przyciski
+    selected = st.radio(
+        "Wybierz pozycję",
+        options=range(7),
+        key=pytanie,
+        label_visibility="hidden",
+        horizontal=True
+    )
+
+    # Mapowanie wybranej opcji na wartość (0 -> NaN, 1-6 -> 1-6)
+    wyniki[pytanie] = float('nan') if selected == 0 else selected
+
     st.write("")
-    wyniki[pytanie] = position
+    st.write("")
 
 # Przycisk zatwierdzający
 st.write("")
 st.write("Jeśli jesteś pewny wszystkich odpowiedzi, naciśnij poniższy przycisk.")
 
 if st.button('Zatwierdź odpowiedzi'):
-    if len(wyniki) != len(QUESTIONS):
-        st.error("Proszę odpowiedzieć na wszystkie pytania")
+    # Sprawdzenie, czy są jakieś NaN-y w odpowiedziach
+    brakujace_odpowiedzi = [pytanie for pytanie, odpowiedz in wyniki.items() if pd.isna(odpowiedz)]
+
+    if brakujace_odpowiedzi:
+        st.error("⚠️ Nie odpowiedziałeś na wszystkie pytania!")
+        st.write("Brakuje odpowiedzi dla następujących pytań:")
+        for pytanie in brakujace_odpowiedzi:
+            st.write(f"• {pytanie}")
+        st.write("")
+        st.write("Proszę przejrzyj swoje odpowiedzi i uzupełnij brakujące przed ponownym zatwierdzeniem.")
         st.stop()
 
     try:
