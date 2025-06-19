@@ -1,6 +1,6 @@
 # sekcja importowa
-import os
-import boto3
+# import os
+# import boto3
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -11,7 +11,7 @@ from io import BytesIO
 from typing import Optional
 from datetime import datetime
 from dotenv import load_dotenv
-from botocore.exceptions import ClientError
+# from botocore.exceptions import ClientError
 import logging
 
 # Chwilowo, zamiast podawanego przy przekazaniu na naszą stronę ID z GOTOIT
@@ -22,24 +22,25 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Ładowanie zmiennych środowiskowych
-BUCKET_NAME = 'od-zera-do-ai-rafal'
+# BUCKET_NAME = 'od-zera-do-ai-rafal'
 load_dotenv()
 
 # Globalne ustawianie szerokości
 st.set_page_config(
     page_title="Kompas przekonań",
     page_icon="🔘",
-    # layout="wide"
+    layout="wide",
+    initial_sidebar_state="collapsed"
 )
 
 #
 # ----------------------- STALE ---------------------
 #
-REQUIRED_ENV_VARS = [
-    "AWS_ACCESS_KEY_ID",
-    "AWS_SECRET_ACCESS_KEY",
-    "AWS_ENDPOINT_URL_S3"
-]
+# REQUIRED_ENV_VARS = [
+#     "AWS_ACCESS_KEY_ID",
+#     "AWS_SECRET_ACCESS_KEY",
+#     "AWS_ENDPOINT_URL_S3"
+# ]
 
 CHART_COLORS = [
     '#d6018d', '#8511fe', '#0143fe', '#2a8cff', '#02d6e6',
@@ -166,41 +167,41 @@ def init_session_state():
 
 
 # Sprawdzenie zmiennych środowiskowych dla Digital Ocean
-def check_environment() -> bool:
-    missing_vars = [var for var in REQUIRED_ENV_VARS if not os.getenv(var)]
-    if missing_vars:
-        st.error(f"Brak wymaganych zmiennych środowiskowych: {', '.join(missing_vars)}")
-        return False
-    return True
+# def check_environment() -> bool:
+#     missing_vars = [var for var in REQUIRED_ENV_VARS if not os.getenv(var)]
+#     if missing_vars:
+#         st.error(f"Brak wymaganych zmiennych środowiskowych: {', '.join(missing_vars)}")
+#         return False
+#     return True
 
 
 # Inicjalizacja klienta S3 dla Digital Ocean
-def init_s3_client():
+# def init_s3_client():
 
-    try:
-        return boto3.client(
-            "s3",
-            aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-            aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-            endpoint_url=os.getenv("AWS_ENDPOINT_URL_S3")
-        )
-    except Exception as e:
-        logger.error(f"Błąd podczas inicjalizacji klienta S3: {str(e)}")
-        st.error("Nie udało się połączyć z serwisem Digital Ocean.")
-        return None
+#     try:
+#         return boto3.client(
+#             "s3",
+#             aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+#             aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+#             endpoint_url=os.getenv("AWS_ENDPOINT_URL_S3")
+#         )
+#     except Exception as e:
+#         logger.error(f"Błąd podczas inicjalizacji klienta S3: {str(e)}")
+#         st.error("Nie udało się połączyć z serwisem Digital Ocean.")
+#         return None
 
 
 # Wczytanie danych z pliku CSV z Digital Ocean
-@st.cache_data
-def wczytaj_dataframe(_s3_client, bucket_name: str, nazwa_pliku: str) -> Optional[pd.DataFrame]:
+# @st.cache_data
+# def wczytaj_dataframe(_s3_client, bucket_name: str, nazwa_pliku: str) -> Optional[pd.DataFrame]:
 
-    try:
-        obj_data = _s3_client.get_object(Bucket=bucket_name, Key=nazwa_pliku)
-        data = obj_data['Body'].read()
-        return pd.read_csv(BytesIO(data), sep=';', encoding='utf-8')
-    except Exception as e:
-        logger.error(f"Błąd wczytywania pliku {nazwa_pliku}: {str(e)}")
-        return None
+#     try:
+#         obj_data = _s3_client.get_object(Bucket=bucket_name, Key=nazwa_pliku)
+#         data = obj_data['Body'].read()
+#         return pd.read_csv(BytesIO(data), sep=';', encoding='utf-8')
+#     except Exception as e:
+#         logger.error(f"Błąd wczytywania pliku {nazwa_pliku}: {str(e)}")
+#         return None
 
 
 # Wyliczam 19 wartosci
@@ -365,12 +366,12 @@ def create_polar_chart(dane_19_do_wykresu_df: pd.DataFrame) -> Optional[plt.Figu
 # Inicjalizacja
 init_session_state()
 
-if not check_environment():
-    st.stop()
+# if not check_environment():
+#     st.stop()
 
-s3_client = init_s3_client()
-if s3_client is None:
-    st.stop()
+# s3_client = init_s3_client()
+# if s3_client is None:
+#     st.stop()
 
 # Tytuł i opis
 st.markdown("<h1 style='text-align: center;'>Kompas przekonań</h1>", unsafe_allow_html=True)
@@ -437,11 +438,11 @@ if st.sidebar.button("Zatwierdź"):
 st.markdown("""
 <div style='text-align: justify;'>
 
-Poświęć nam proszę kilka chwil, a na pewno nie pożałujesz :-)
+Poświęć proszę kilka chwil, a na pewno nie pożałujesz :-)
 
-Czy zastanawialiście się kiedyś, dlaczego jedne zadania wykonujecie chętniej niż inne? Albo że jedni ludzie wolą pracować samodzielnie, podczas gdy inni preferują pracę w grupie? Że podczas gdy jedni uczą się powoli i systematycznie, inni robią to zrywami; momenty intensywnej pracy przeplatając okresami pozornej bezczynności?
+Czy nurtowało Cię kiedyś pytanie: dlaczego jedne zadania wykonujesz chętniej niż inne? Albo że jedni ludzie wolą pracować samodzielnie, podczas gdy inni preferują pracę w grupie? Że podczas gdy jedni uczą się powoli i systematycznie, inni robią to zrywami, momenty intensywnej pracy przeplatając okresami pozornej bezczynności?
 
-Jako ludzie różnimy się między sobą. Mamy różne cele, różne pragnienia i dążenia, różne sposoby osiągania naszych celów i różne przekonania. Często są one nieświadome. Ale czy tego chcemy, czy nie, wpływają na nasze życie. Są bowiem powiązane z emocjami, które nami kierują, popychając nas w stronę jednych rzeczy, a odpychając od innych. Stanowią motywację naszego działania.
+Jako ludzie różnimy się między sobą. Mamy różne przekonania, pragnienia i dążenia, różne cele i różne sposoby ich osiągania. Często nasze pragnienia są nieuświadomione. Ale czy tego chcemy, czy nie, wpływają na nasze życie. Są bowiem powiązane z emocjami, które nami kierują, popychając nas w stronę jednych rzeczy, a odpychając od innych. Stanowią ukrytą motywację naszego działania.
 
 Jeśli tylko szczerze odpowiesz na poniższe pytania, najprawdopodobniej dowiesz się, co tobą kieruje, co cię tak naprawdę w życiu motywuje. Ankieta jest oczywiście całkowicie anonimowa, żadne wrażliwe dane nie są tutaj ani zbierane, ani przechowywane.
 
@@ -452,7 +453,7 @@ st.write("")
 st.markdown("<h4>Instrukcja</h4>", unsafe_allow_html=True)
 
 st.markdown("""
-Poniżej znajduje się 57 zdań. Przeczytaj je i zastanów się, na ile przedstawiony w każdym z nich człowiek jest podobny lub nie jest podobny do Ciebie. Użyj suwaka, aby wybrać odpowiednią wartość.
+Poniżej znajduje się 57 zdań. Przeczytaj je i zastanów się, na ile przedstawiony w każdym z nich człowiek jest podobny lub nie do Ciebie. Wybierz odpowiednią wartość.
 """, unsafe_allow_html=True)
 
 st.write("")
@@ -461,12 +462,12 @@ st.markdown("<h5>Skala odpowiedzi</h5>", unsafe_allow_html=True)
 st.markdown("""
 W jakim stopniu ten człowiek jest podobny do Ciebie?
 
-1 - zupełnie niepodobny do mnie  
-2 - niepodobny do mnie  
-3 - trochę podobny do mnie  
-4 - średnio podobny do mnie  
-5 - podobny do mnie  
-6 - bardzo podobny do mnie  
+1 - zupełnie niepodobny do mnie
+2 - niepodobny do mnie
+3 - trochę podobny do mnie
+4 - średnio podobny do mnie
+5 - podobny do mnie
+6 - bardzo podobny do mnie
 """, unsafe_allow_html=True)
 st.write("")
 st.write("")
@@ -561,32 +562,32 @@ if st.button('Zatwierdź odpowiedzi'):
             # Dodajemy kolumny z odpowiedziami
             for col in odpowiedzi_df.columns:
                 combined_df[col] = odpowiedzi_df[col].values[0]
-            try:
-                s3_client.head_object(Bucket=BUCKET_NAME, Key='dane_kursantow.csv')
-                # Plik istnieje, wczytaj go
-                existing_df = wczytaj_dataframe(s3_client, BUCKET_NAME, 'dane_kursantow.csv')
-                existing_df = existing_df.reset_index(drop=True)
-                # Dodaj nowy wiersz
-                updated_df = pd.concat([existing_df, combined_df], axis=0, ignore_index=True)
-            except ClientError as e:
-                if e.response['Error']['Code'] == '404':
-                    # Plik nie istnieje, użyj tylko nowych danych
-                    updated_df = combined_df
-                else:
-                    # Inny błąd S3
-                    st.error(f"Błąd dostępu do S3: {str(e)}")
-                    raise
+            # try:
+            #     s3_client.head_object(Bucket=BUCKET_NAME, Key='dane_kursantow.csv')
+            #     # Plik istnieje, wczytaj go
+            #     existing_df = wczytaj_dataframe(s3_client, BUCKET_NAME, 'dane_kursantow.csv')
+            #     existing_df = existing_df.reset_index(drop=True)
+            #     # Dodaj nowy wiersz
+            #     updated_df = pd.concat([existing_df, combined_df], axis=0, ignore_index=True)
+            # except ClientError as e:
+            #     if e.response['Error']['Code'] == '404':
+            #         # Plik nie istnieje, użyj tylko nowych danych
+            #         updated_df = combined_df
+            #     else:
+            #         # Inny błąd S3
+            #         st.error(f"Błąd dostępu do S3: {str(e)}")
+            #         raise
 
             # Zapisz z powrotem do S3
-            csv_buffer = BytesIO()
-            updated_df.to_csv(csv_buffer, sep=';', index=False, encoding='utf-8')
-            csv_buffer.seek(0)
+            # csv_buffer = BytesIO()
+            # updated_df.to_csv(csv_buffer, sep=';', index=False, encoding='utf-8')
+            # csv_buffer.seek(0)
 
-            s3_client.put_object(
-                Bucket=BUCKET_NAME,
-                Key='dane_kursantow.csv',
-                Body=csv_buffer.getvalue()
-            )
+            # s3_client.put_object(
+            #     Bucket=BUCKET_NAME,
+            #     Key='dane_kursantow.csv',
+            #     Body=csv_buffer.getvalue()
+            # )
 
         # Obliczenie średnich i generowanie wykresu
         dane_19_do_wykresu_df = oblicz_srednie_kategorii(odpowiedzi_df)
