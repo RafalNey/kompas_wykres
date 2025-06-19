@@ -29,7 +29,7 @@ load_dotenv()
 st.set_page_config(
     page_title="Kompas przekonań",
     page_icon="🔘",
-    layout="wide",
+    # layout="wide",
     initial_sidebar_state="collapsed"
 )
 
